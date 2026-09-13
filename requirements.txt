@@ -1,0 +1,26 @@
+# Core
+pandas>=2.0.0
+PyYAML>=6.0
+python-dotenv>=1.0.0
+
+# Extraction
+requests>=2.31.0
+SQLAlchemy>=2.0.0
+psycopg2-binary>=2.9.9      # PostgreSQL driver (swap for your DB)
+openpyxl>=3.1.0             # Excel support
+
+# Loading - Data Warehouses (install what you need)
+snowflake-connector-python>=3.7.0
+snowflake-sqlalchemy>=1.5.0
+google-cloud-bigquery>=3.17.0
+pandas-gbq>=0.21.0
+
+# Orchestration / scheduling
+APScheduler>=3.10.0
+prefect>=2.14.0             # optional, for advanced DAG-style orchestration
+
+# Data quality / validation
+pandera>=0.18.0
+
+# Logging / retries
+tenacity>=8.2.3

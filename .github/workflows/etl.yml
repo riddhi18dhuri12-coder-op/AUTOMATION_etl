@@ -1,0 +1,51 @@
+name: Run ETL Pipeline
+
+on:
+  schedule:
+    # Runs daily at 02:00 UTC. Edit to match your config.yaml schedule.
+    # NOTE: GitHub cron syntax is UTC only and can be delayed a few
+    # minutes during high load — fine for daily/hourly jobs, not for
+    # anything requiring second-level precision.
+    - cron: "0 2 * * *"
+  workflow_dispatch:      # lets you trigger a run manually from the Actions tab
+
+jobs:
+  run-etl:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run pipeline
+        env:
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          SNOWFLAKE_ACCOUNT: ${{ secrets.SNOWFLAKE_ACCOUNT }}
+          SNOWFLAKE_USER: ${{ secrets.SNOWFLAKE_USER }}
+          SNOWFLAKE_PASSWORD: ${{ secrets.SNOWFLAKE_PASSWORD }}
+          SNOWFLAKE_WAREHOUSE: ${{ secrets.SNOWFLAKE_WAREHOUSE }}
+          SNOWFLAKE_DATABASE: ${{ secrets.SNOWFLAKE_DATABASE }}
+          GCP_PROJECT: ${{ secrets.GCP_PROJECT }}
+          ALERT_WEBHOOK_URL: ${{ secrets.ALERT_WEBHOOK_URL }}
+        run: python main.py run --config ./config/config.yaml
+
+      - name: Upload logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: etl-logs
+          path: logs/
+          retention-days: 7

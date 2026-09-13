@@ -1,0 +1,126 @@
+# ============================================================
+# ETL Pipeline Configuration
+# Copy this file to config.yaml and fill in real values.
+# Secrets should come from environment variables (.env), not
+# hardcoded here — see ${VAR_NAME} placeholders below.
+# ============================================================
+
+pipeline:
+  name: "daily_sales_etl"
+  run_id_format: "%Y%m%d_%H%M%S"
+  fail_fast: false          # if true, stop pipeline on first source failure
+  staging_dir: "./data/staging"
+
+# ------------------------------------------------------------
+# SOURCES — define as many as you need, each with a unique name
+# and a "type" that maps to an extractor: csv | excel | sql | api
+# ------------------------------------------------------------
+sources:
+  - name: "raw_orders_csv"
+    type: csv
+    path: "./data/incoming/orders_*.csv"     # glob supported
+    options:
+      delimiter: ","
+      encoding: "utf-8"
+
+  - name: "customers_db"
+    type: sql
+    connection_string: "postgresql+psycopg2://${DB_USER}:${DB_PASSWORD}@${DB_HOST}:5432/${DB_NAME}"
+    query: "SELECT customer_id, name, email, region, created_at FROM customers WHERE updated_at >= :since"
+    incremental:
+      enabled: true
+      cursor_field: "updated_at"
+      state_key: "customers_db_last_run"
+
+  - name: "fx_rates_api"
+    type: api
+    url: "https://api.exchangerate.host/latest"
+    method: GET
+    params:
+      base: "USD"
+    headers: {}
+    pagination:
+      enabled: false
+    response_path: "rates"        # dot-path into JSON response to the records
+
+# ------------------------------------------------------------
+# TRANSFORMATIONS — applied in order, per named source or "all"
+# ------------------------------------------------------------
+transformations:
+  raw_orders_csv:
+    - op: rename_columns
+      mapping:
+        OrderID: order_id
+        CustAmount: amount
+    - op: drop_duplicates
+      subset: ["order_id"]
+    - op: cast_types
+      columns:
+        order_id: str
+        amount: float
+    - op: filter_rows
+      condition: "amount > 0"
+    - op: add_column
+      column: source_system
+      value: "orders_csv"
+
+  customers_db:
+    - op: drop_nulls
+      subset: ["email"]
+    - op: standardize_text
+      columns: ["region"]
+      mode: upper
+
+  fx_rates_api:
+    - op: flatten_json
+    - op: add_column
+      column: fetched_at
+      value: "{{now}}"
+
+# ------------------------------------------------------------
+# DESTINATION — the data warehouse to load into
+# ------------------------------------------------------------
+destination:
+  type: snowflake          # snowflake | bigquery
+  snowflake:
+    account: "${SNOWFLAKE_ACCOUNT}"
+    user: "${SNOWFLAKE_USER}"
+    password: "${SNOWFLAKE_PASSWORD}"
+    warehouse: "${SNOWFLAKE_WAREHOUSE}"
+    database: "${SNOWFLAKE_DATABASE}"
+    schema: "RAW"
+    table_map:
+      raw_orders_csv: "ORDERS"
+      customers_db: "CUSTOMERS"
+      fx_rates_api: "FX_RATES"
+    load_mode: "append"       # append | replace | merge
+    merge_keys:
+      customers_db: ["customer_id"]
+  bigquery:
+    project: "${GCP_PROJECT}"
+    dataset: "raw"
+    credentials_path: "${GOOGLE_APPLICATION_CREDENTIALS}"
+    table_map:
+      raw_orders_csv: "orders"
+      customers_db: "customers"
+      fx_rates_api: "fx_rates"
+    load_mode: "append"
+
+# ------------------------------------------------------------
+# SCHEDULING — for automated recurring runs (used by scheduler.py)
+# ------------------------------------------------------------
+schedule:
+  enabled: true
+  type: cron            # cron | interval
+  cron: "0 2 * * *"     # run daily at 02:00
+  # interval_minutes: 60
+
+# ------------------------------------------------------------
+# NOTIFICATIONS — optional alerting on failure/success
+# ------------------------------------------------------------
+notifications:
+  on_failure:
+    enabled: true
+    webhook_url: "${ALERT_WEBHOOK_URL}"
+  on_success:
+    enabled: false

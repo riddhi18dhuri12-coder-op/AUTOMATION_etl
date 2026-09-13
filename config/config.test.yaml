@@ -1,0 +1,44 @@
+pipeline:
+  name: "smoke_test_etl"
+  run_id_format: "%Y%m%d_%H%M%S"
+  fail_fast: false
+  staging_dir: "./data/staging"
+
+sources:
+  - name: "raw_orders_csv"
+    type: csv
+    path: "./data/incoming/orders_*.csv"
+    options:
+      delimiter: ","
+      encoding: "utf-8"
+
+transformations:
+  raw_orders_csv:
+    - op: rename_columns
+      mapping:
+        OrderID: order_id
+        CustAmount: amount
+    - op: drop_duplicates
+      subset: ["order_id"]
+    - op: cast_types
+      columns:
+        order_id: str
+        amount: float
+    - op: filter_rows
+      condition: "amount > 0"
+    - op: add_column
+      column: source_system
+      value: "orders_csv"
+
+destination:
+  type: mock
+  mock: {}
+
+schedule:
+  enabled: false
+
+notifications:
+  on_failure:
+    enabled: false
+  on_success:
+    enabled: false
